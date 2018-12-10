@@ -83,10 +83,15 @@ TRAIN_DATA_FILE_PATH = './train.csv'
 TEST_DATA_FILE_PATH = './test.csv'
 
 
-def load_data_from_csv(path_to_csv, x_field_range, y_field_range):
-    x_result = np.empty(shape=(0, (x_field_range.stop - x_field_range.start)))
+def load_data_from_csv(path_to_csv, x_field_ranges, y_field_range):
+    '''
+        Note: each range in x_field_ranges corresponds to a given filter e.g. R or G or B.
+        Hence, all range values within x_field_ranges must be same.
+        This is typically used for conv NN.
+    '''
+    # x_result shape is (len(x_field_range), x_field_range, num_rows_input)
+    x_result = np.empty(shape=(len(x_field_ranges), (x_field_ranges[0].stop - x_field_ranges[0].start), 0))
     y_result = np.empty(shape=(0, (y_field_range.stop - y_field_range.start)))
-    print('y_result shape: ', y_result.shape)
     with open(path_to_csv, 'r') as csv_file:
         data_iterator = csv.reader(csv_file, delimiter=',')
         # Skip the header
@@ -94,9 +99,12 @@ def load_data_from_csv(path_to_csv, x_field_range, y_field_range):
 
         for data_list in data_iterator:
             #print(row)
-            x_data = data_list[x_field_range.start:x_field_range.stop]
-            x_result = np.append(x_result, np.array([x_data]), axis=0)
+            x_data_all_channels = np.empty(shape=(0, (x_field_ranges[0].stop - x_field_ranges[0].start)))
 
+            for x_field_range in x_field_ranges:
+                x_data = data_list[x_field_range.start:x_field_range.stop]
+                x_data_all_channels = np.append(x_data_all_channels, np.atleast_2d([x_data]), axis=0)
+            x_result = np.append(x_result, np.atleast_3d(x_data_all_channels) , axis=2)
             y_data = data_list[y_field_range.start:y_field_range.stop]
             y_result = np.append(y_result, np.array([y_data]), axis=0)
 
@@ -129,6 +137,17 @@ class ModelFactory:
 
         self.load_data()
 
+    def extract_image_ids(self, path_to_csv):
+        self.x_test_imgids = np.empty(0)
+        # Get the test input image_ids (1st col) from the data.
+        with open(path_to_csv, 'r') as csv_file:
+            data_iterator = csv.reader(csv_file, delimiter=',')
+            # Skip the header
+            next(data_iterator)
+
+            for data_list in data_iterator:
+                self.x_test_imgids = np.append(self.x_test_imgids, data_list[0])
+
     def load_data(self):
         # Training data:
         #   File: 991 rows, 194 columns
@@ -142,25 +161,29 @@ class ModelFactory:
         #   Output shape: 594 rows, 100 columns (ID, 99 species probabilities)
         #       Note: Output shape is Model outpupt, Not obtained from file
         (self.x_train, self.y_train_str) = load_data_from_csv(
-            TRAIN_DATA_FILE_PATH, range(2, 194), range(1, 2))
+            TRAIN_DATA_FILE_PATH, [range(2, 66), range(66,130), range(130, 194)], range(1, 2))
         (self.x_test, discard) = load_data_from_csv(
-            TEST_DATA_FILE_PATH, range(0, 193), range(0, 0))
+            TEST_DATA_FILE_PATH, [range(1, 65), range(65, 129), range(129, 193)], range(0, 0))
+
+        self.extract_image_ids(TEST_DATA_FILE_PATH)
 
         # Convert the output labels into integers, for one-hot-encoding
         label_encoder = LabelEncoder()
         self.y_train_num = label_encoder.fit_transform(self.y_train_str)
 
-        # Separate the test input image_ids (1st col) from the rest of the data.
-        self.x_test_imgids = self.x_test[:, 0]
-        self.x_test = np.delete(self.x_test, 0, axis=1)
-        #for x_data in self.x_test:
-        #    img_id = x_data.pop(0)
-        #    self.x_test_imgids = np.append(self.x_test_imgids, np.array([img_id]), axis=0)
-
         print("training input data shape: ", self.x_train.shape)
         print("training output data shape: ", self.y_train_str.shape)
         print("test input data shape: ", self.x_test.shape)
 
+        # Print the extracted data - for validation only
+        print("Train data: ")
+        for i in range(10):
+            print(self.x_train[0, i, 0])
+
+        print("\nTest data: ")
+        for i in range(10):
+            print(self.x_test[0, i, 0])
+ 
     def build_conv_model(self):
         #create model
         self.model = Sequential()
@@ -258,16 +281,16 @@ class NetworkParams:
 
 params = NetworkParams()
 leafClassifier = ModelFactory(params)
-leafClassifier.build_model()
-leafClassifier.train()
-res = leafClassifier.validate()
-overall_res = np.empty((0, 1))
-for i in range(len(res)):
-    species = np.argmax(res[i])
-    print("Img: ", leafClassifier.x_test_imgids[i], " species: ", species)
-    overall_res = np.append(overall_res, species)
+#leafClassifier.build_model()
+#leafClassifier.train()
+#res = leafClassifier.validate()
+#overall_res = np.empty((0, 1))
+#for i in range(len(res)):
+#    species = np.argmax(res[i])
+#    print("Img: ", leafClassifier.x_test_imgids[i], " species: ", species)
+#    overall_res = np.append(overall_res, species)
 
-print("Unique: ", len(np.unique(overall_res)))
+#print("Unique: ", len(np.unique(overall_res)))
 #mnistFactory.plot_stats()
 # Uncomment the below to generate a plot.png from keras utils.
 # plot_model(model, to_file='model_plot.png', show_shapes=True, show_layer_names=True)
